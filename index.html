@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Relógio de cabeceira</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Relógio">
+<style>
+html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+#stage { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: -webkit-flex; display: flex; -webkit-flex-direction: column; flex-direction: column; -webkit-justify-content: center; justify-content: center; -webkit-align-items: center; align-items: center; color: #ffb000; -webkit-transition: opacity .5s, color .4s; transition: opacity .5s, color .4s; }
+#time { font-weight: 200; font-size: 30vw; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; }
+#sec { font-size: 4vw; font-weight: 300; opacity: .6; margin-left: .15em; }
+#date { font-weight: 300; font-size: 4.4vw; margin-top: 3vw; opacity: .75; }
+#controls { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; opacity: .35; }
+.dot { display: inline-block; width: 34px; height: 34px; border-radius: 50%; margin: 0 9px; border: 2px solid transparent; vertical-align: middle; }
+.dot.on { border-color: #fff; }
+#fmt { display: inline-block; margin-left: 18px; padding: 8px 14px; border: 1px solid #888; border-radius: 8px; color: #ccc; font-size: 16px; vertical-align: middle; }
+#wx { margin-top: 3vw; padding: 1.4vw 3vw; border: 1px solid currentColor; border-radius: 14px; text-align: center; opacity: .85; min-width: 40vw; }
+#wx1 { font-size: 5.5vw; font-weight: 300; line-height: 1.2; }
+#wx2 { font-size: 2.8vw; font-weight: 300; margin-top: .6vw; opacity: .8; }
+@media (orientation: landscape) { #time { font-size: 24vw; } #sec { font-size: 3vw; } #date { font-size: 3.4vw; margin-top: 1.5vw; } #wx { margin-top: 1.5vw; padding: 1vw 2.5vw; min-width: 32vw; } #wx1 { font-size: 4vw; } #wx2 { font-size: 2.2vw; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="time"><span id="hm">--:--</span><span id="sec"></span></div>
+  <div id="date"></div>
+  <div id="wx"><div id="wx1">--</div><div id="wx2">Carregando previsão...</div></div>
+</div>
+<div id="controls">
+  <span class="dot" data-c="#ffb000" style="background:#ffb000"></span><span class="dot" data-c="#c81e1e" style="background:#c81e1e"></span><span class="dot" data-c="#3ddc84" style="background:#3ddc84"></span><span class="dot" data-c="#5aa9ff" style="background:#5aa9ff"></span><span class="dot" data-c="#e8e0d0" style="background:#e8e0d0"></span><span id="fmt">24h</span>
+</div>
+<script>
+(function () {
+  var dias = ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
+  var meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  var levels = [1, 0.5, 0.25, 0.1];
+  var state = { color: "#ffb000", level: 0, h24: true };
+  var stage = document.getElementById("stage");
+  var hm = document.getElementById("hm");
+  var sec = document.getElementById("sec");
+  var dateEl = document.getElementById("date");
+  var fmt = document.getElementById("fmt");
+  var dots = document.querySelectorAll(".dot");
+
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+
+  function load() {
+    try {
+      var s = JSON.parse(localStorage.getItem("relogio") || "null");
+      if (s) { state.color = s.color || state.color; state.level = s.level || 0; state.h24 = s.h24 !== false; }
+    } catch (e) {}
+  }
+  function save() {
+    try { localStorage.setItem("relogio", JSON.stringify(state)); } catch (e) {}
+  }
+
+  function apply() {
+    stage.style.color = state.color;
+    stage.style.opacity = levels[state.level];
+    fmt.innerHTML = state.h24 ? "24h" : "12h";
+    for (var i = 0; i < dots.length; i++) {
+      dots[i].className = "dot" + (dots[i].getAttribute("data-c") === state.color ? " on" : "");
+    }
+  }
+
+  function tick() {
+    var d = new Date();
+    var h = d.getHours();
+    var suffix = "";
+    if (!state.h24) { suffix = h >= 12 ? " pm" : " am"; h = h % 12; if (h === 0) { h = 12; } }
+    hm.innerHTML = (state.h24 ? pad(h) : h) + ":" + pad(d.getMinutes());
+    sec.innerHTML = pad(d.getSeconds()) + suffix;
+    dateEl.innerHTML = dias[d.getDay()] + ", " + d.getDate() + " de " + meses[d.getMonth()];
+  }
+
+  stage.onclick = function () { state.level = (state.level + 1) % levels.length; apply(); save(); };
+  fmt.onclick = function () { state.h24 = !state.h24; apply(); tick(); save(); };
+  for (var i = 0; i < dots.length; i++) {
+    dots[i].onclick = function () { state.color = this.getAttribute("data-c"); apply(); save(); };
+  }
+
+  // Local da previsão: troque LAT e LON pelas coordenadas da sua cidade
+  var LAT = -23.55, LON = -46.63;
+  var wx1 = document.getElementById("wx1");
+  var wx2 = document.getElementById("wx2");
+  var wxOk = false;
+
+  function wxInfo(c) {
+    if (c === 0) { return ["\u2600\uFE0F", "Céu limpo"]; }
+    if (c === 1 || c === 2) { return ["\u26C5", "Parcialmente nublado"]; }
+    if (c === 3) { return ["\u2601\uFE0F", "Nublado"]; }
+    if (c === 45 || c === 48) { return ["\uD83C\uDF2B", "Neblina"]; }
+    if (c >= 51 && c <= 57) { return ["\uD83C\uDF26", "Garoa"]; }
+    if ((c >= 61 && c <= 67) || (c >= 80 && c <= 82)) { return ["\uD83C\uDF27", "Chuva"]; }
+    if ((c >= 71 && c <= 77) || c === 85 || c === 86) { return ["\u2744\uFE0F", "Neve"]; }
+    if (c >= 95) { return ["\u26C8", "Tempestade"]; }
+    return ["\u2601\uFE0F", "Tempo variável"];
+  }
+
+  function wxShow(d) {
+    var info = wxInfo(d.daily.weathercode[0]);
+    wx1.innerHTML = info[0] + " " + Math.round(d.current_weather.temperature) + "°";
+    wx2.innerHTML = info[1] + " · mín " + Math.round(d.daily.temperature_2m_min[0]) + "° · máx " + Math.round(d.daily.temperature_2m_max[0]) + "° · chuva " + Math.round(d.daily.precipitation_probability_max[0]) + "%";
+    wxOk = true;
+  }
+
+  function wxFail() {
+    if (!wxOk) { wx1.innerHTML = "--"; wx2.innerHTML = "Previsão indisponível"; }
+  }
+
+  function wxLoad() {
+    var url = "https://api.open-meteo.com/v1/forecast?latitude=" + LAT + "&longitude=" + LON + "&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1";
+    try {
+      var x = new XMLHttpRequest();
+      x.open("GET", url, true);
+      x.timeout = 15000;
+      x.onreadystatechange = function () {
+        if (x.readyState !== 4) { return; }
+        if (x.status === 200) {
+          try { wxShow(JSON.parse(x.responseText)); } catch (e) { wxFail(); }
+        } else { wxFail(); }
+      };
+      x.send();
+    } catch (e) { wxFail(); }
+  }
+
+  load(); apply(); tick();
+  wxLoad();
+  setInterval(wxLoad, 30 * 60 * 1000);
+  setInterval(tick, 1000);
+})();
+</script>
+</body>
+</html>
