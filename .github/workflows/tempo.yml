@@ -1,0 +1,23 @@
+name: Atualizar previsão
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tempo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Buscar previsão
+        run: python3 buscar_tempo.py
+      - name: Salvar resultado
+        run: |
+          git config user.name "relogio-bot"
+          git config user.email "relogio-bot@users.noreply.github.com"
+          git add tempo.json
+          git diff --cached --quiet || (git commit -m "Atualiza previsão" && git push)
