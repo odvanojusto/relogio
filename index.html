@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Relógio de cabeceira</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Relógio">
+<style>
+html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+#stage { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: -webkit-flex; display: flex; -webkit-flex-direction: column; flex-direction: column; -webkit-justify-content: center; justify-content: center; -webkit-align-items: center; align-items: center; color: #ffb000; -webkit-transition: opacity .5s, color .4s; transition: opacity .5s, color .4s; }
+#time { font-weight: 200; font-size: 30vw; line-height: 1; letter-spacing: -0.02em; white-space: nowrap; }
+#sec { font-size: .14em; font-weight: 300; opacity: .6; margin-left: .15em; }
+#date { font-weight: 300; font-size: 4.4vw; margin-top: 3vw; opacity: .75; }
+#wx { margin-top: 3vw; padding: 1.4vw 3vw; border: 1px solid currentColor; border-radius: 14px; text-align: center; opacity: .85; min-width: 40vw; max-width: 90vw; box-sizing: border-box; cursor: pointer; }
+#wx1 { font-size: 5.5vw; font-weight: 300; line-height: 1.2; }
+#wx2 { font-size: 2.8vw; font-weight: 300; margin-top: .6vw; opacity: .8; white-space: pre-line; }
+#wx4 { font-size: 2.8vw; font-weight: 300; margin-top: 1vw; opacity: .8; }
+#wx3 { font-size: 2.4vw; font-weight: 300; margin-top: .6vw; opacity: .7; }
+#controls { position: absolute; left: 0; right: 0; top: 18px; text-align: center; opacity: .35; }
+.dot { display: inline-block; width: 34px; height: 34px; border-radius: 50%; margin: 0 9px; border: 2px solid transparent; vertical-align: middle; }
+.dot.on { border-color: #fff; }
+#fmt { display: inline-block; margin-left: 18px; padding: 8px 14px; border: 1px solid #888; border-radius: 8px; color: #ccc; font-size: 16px; vertical-align: middle; }
+#city { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10; background: #000; color: #ddd; padding: 30px 5vw; overflow: auto; -webkit-overflow-scrolling: touch; }
+#city h2 { font-size: 22px; font-weight: 300; margin: 0 0 16px; }
+.btn { display: inline-block; padding: 11px 16px; margin-top: 20px; border: 1px solid #888; border-radius: 8px; font-size: 18px; color: #ddd; }
+.cityItem { padding: 16px 6px; border-bottom: 1px solid #333; font-size: 20px; }
+.hint { margin-top: 20px; font-size: 16px; color: #888; }
+@media (orientation: landscape) {
+  #time { font-size: 24vw; } #date { font-size: 3.4vw; margin-top: 1.5vw; }
+  #wx { margin-top: 1.5vw; padding: 1vw 2.5vw; min-width: 32vw; }
+  #wx1 { font-size: 4vw; } #wx2, #wx4 { font-size: 2.2vw; } #wx3 { font-size: 1.9vw; }
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="time"><span id="hm">--:--</span><span id="sec"></span></div>
+  <div id="date"></div>
+  <div id="wx"><div id="wx1">--</div><div id="wx2">Carregando previsão...</div><div id="wx4"></div><div id="wx3"></div></div>
+</div>
+<div id="city"><h2>Escolher cidade</h2><div id="cityRes"></div><span class="btn" id="cityClose">Fechar</span></div>
+<div id="controls">
+  <span class="dot" data-c="#ffb000" style="background:#ffb000"></span><span class="dot" data-c="#c81e1e" style="background:#c81e1e"></span><span class="dot" data-c="#3ddc84" style="background:#3ddc84"></span><span class="dot" data-c="#5aa9ff" style="background:#5aa9ff"></span><span class="dot" data-c="#e8e0d0" style="background:#e8e0d0"></span><span id="fmt">24h</span>
+</div>
+<script>
+(function () {
+  var dias = ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
+  var meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  var levels = [1, 0.5, 0.25, 0.1];
+  var state = { color: "#ffb000", level: 0, h24: true, city: "" };
+  function $(id) { return document.getElementById(id); }
+  var stage = $("stage"), hm = $("hm"), sec = $("sec"), dateEl = $("date"), fmt = $("fmt");
+  var wx1 = $("wx1"), wx2 = $("wx2"), wx3 = $("wx3"), wx4 = $("wx4");
+  var cityEl = $("city"), cityRes = $("cityRes");
+  var dots = document.querySelectorAll(".dot");
+  var data = null;   // conteúdo de tempo.json
+  var skew = 0;      // diferença entre a hora do servidor e a do aparelho (ms)
+
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function num(v) { return (v === null || v === undefined) ? "--" : v + "°"; }
+  function chuva(v) { return (v === null || v === undefined) ? "" : " · chuva " + v + "%"; }
+
+  function load() {
+    try {
+      var s = JSON.parse(localStorage.getItem("relogio") || "null");
+      if (s) { state.color = s.color || state.color; state.level = s.level || 0; state.h24 = s.h24 !== false; state.city = s.city || ""; }
+    } catch (e) {}
+  }
+  function save() {
+    try { localStorage.setItem("relogio", JSON.stringify(state)); } catch (e) {}
+  }
+  function apply() {
+    stage.style.color = state.color;
+    stage.style.opacity = levels[state.level];
+    fmt.innerHTML = state.h24 ? "24h" : "12h";
+    for (var i = 0; i < dots.length; i++) {
+      dots[i].className = "dot" + (dots[i].getAttribute("data-c") === state.color ? " on" : "");
+    }
+  }
+
+  function current() {
+    if (!data || !data.cidades || !data.cidades.length) { return null; }
+    for (var i = 0; i < data.cidades.length; i++) {
+      if (data.cidades[i].nome === state.city) { return data.cidades[i]; }
+    }
+    return data.cidades[0];
+  }
+
+  // Reduz a fonte do relógio se hora + segundos passarem da largura da tela
+  function fit() {
+    var t = $("time");
+    t.style.fontSize = "";
+    var l = hm.getBoundingClientRect(), r = sec.getBoundingClientRect();
+    var w = r.right - l.left, max = window.innerWidth * 0.92;
+    if (w > max && w > 0) {
+      var fs = parseFloat(window.getComputedStyle(t).fontSize);
+      t.style.fontSize = (fs * max / w) + "px";
+    }
+  }
+
+  function amanha(c) {
+    var d = new Date(Date.now() + skew + c.offset * 1000 + 86400000);
+    return pad(d.getUTCDate()) + "/" + pad(d.getUTCMonth() + 1);
+  }
+
+  function tick() {
+    var c = current();
+    var off = c ? c.offset : -new Date().getTimezoneOffset() * 60;
+    var d = new Date(Date.now() + skew + off * 1000);
+    var h = d.getUTCHours();
+    var suffix = "";
+    if (!state.h24) { suffix = h >= 12 ? " pm" : " am"; h = h % 12; if (h === 0) { h = 12; } }
+    hm.innerHTML = (state.h24 ? pad(h) : h) + ":" + pad(d.getUTCMinutes());
+    sec.innerHTML = pad(d.getUTCSeconds()) + suffix;
+    dateEl.innerHTML = dias[d.getUTCDay()] + ", " + d.getUTCDate() + " de " + meses[d.getUTCMonth()];
+    fit();
+  }
+
+  function render() {
+    var c = current();
+    if (!c) { return; }
+    var h = c.hoje, a = c.amanha;
+    wx1.textContent = h.icone + " " + num(c.agora);
+    wx2.textContent = h.texto + "\nmín " + num(h.min) + " · máx " + num(h.max) + chuva(h.chuva);
+    wx4.textContent = "Amanhã " + amanha(c) + ": " + a.icone + " " + num(a.min) + " / " + num(a.max) + chuva(a.chuva);
+    var velho = (Date.now() + skew - Date.parse(data.atualizado)) > 3 * 3600 * 1000;
+    wx3.textContent = "\uD83D\uDCCD " + c.nome + " · " + c.fonte + (velho ? " · desatualizado" : "");
+  }
+
+  function fail(st) {
+    if (!data) { wx2.textContent = "Sem dados da previsão (erro " + st + ")"; }
+  }
+
+  function fetchData() {
+    try {
+      var x = new XMLHttpRequest();
+      x.open("GET", "tempo.json?t=" + Date.now(), true);
+      x.timeout = 20000;
+      x.onreadystatechange = function () {
+        if (x.readyState !== 4) { return; }
+        if (x.status !== 200) { fail(x.status); return; }
+        try {
+          data = JSON.parse(x.responseText);
+          var sd = Date.parse(x.getResponseHeader("Date") || "");
+          if (!isNaN(sd)) { skew = sd - Date.now(); }
+          render(); tick();
+        } catch (e) { fail("dados"); }
+      };
+      x.send();
+    } catch (e) { fail("rede"); }
+  }
+
+  function cityItem(c) {
+    var el = document.createElement("div");
+    el.className = "cityItem";
+    el.textContent = c.nome;
+    el.onclick = function () { state.city = c.nome; save(); cityEl.style.display = "none"; render(); tick(); };
+    return el;
+  }
+  $("wx").onclick = function (ev) {
+    ev = ev || window.event;
+    if (ev.stopPropagation) { ev.stopPropagation(); }
+    cityRes.innerHTML = "";
+    var list = data && data.cidades ? data.cidades : [];
+    for (var i = 0; i < list.length; i++) { cityRes.appendChild(cityItem(list[i])); }
+    var hint = document.createElement("div");
+    hint.className = "hint";
+    hint.textContent = "Para incluir outras cidades, edite o arquivo cidades.json no GitHub.";
+    cityRes.appendChild(hint);
+    cityEl.style.display = "block";
+  };
+  $("cityClose").onclick = function () { cityEl.style.display = "none"; };
+
+  stage.onclick = function () { state.level = (state.level + 1) % levels.length; apply(); save(); };
+  fmt.onclick = function () { state.h24 = !state.h24; apply(); tick(); save(); };
+  for (var i = 0; i < dots.length; i++) {
+    dots[i].onclick = function () { state.color = this.getAttribute("data-c"); apply(); save(); };
+  }
+
+  load(); apply(); tick(); fetchData();
+  setInterval(tick, 1000);
+  setInterval(fetchData, 10 * 60 * 1000);
+})();
+</script>
+</body>
+</html>
